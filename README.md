@@ -1,2 +1,2 @@
 # Ray-Tracer
-A Ray Tracer in C++ from scratch. 
+A Ray Tracer in Cuda C++ from scratch. 

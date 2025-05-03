@@ -19,7 +19,7 @@ class ray {
             return dir;
         }
 
-        __host__ __device__ point3 at(double t) {
+        __host__ __device__ point3 at(double t) const {
             return orig + t * dir;
         }
 

@@ -1,7 +1,7 @@
 PROJECT = Ray-Tracer
 
 CXX = nvcc
-CXXFLAGS =
+CXXFLAGS =-g -G
 
 BUILD_DIR = build
 SRC_DIR = src

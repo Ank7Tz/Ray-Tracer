@@ -1,8 +1,10 @@
 #include <iostream>
 #include <cuda_runtime.h>
+#include <curand_kernel.h>
 #include "vec3.h"
 #include "color.h"
 #include "ray.h"
+#include <math.h>
 
 #define BLOCK_SIZE 256
 
@@ -23,7 +25,27 @@ __constant__ vec3 g_camera_center;
 __constant__ vec3 g_pixel_delta_u;
 __constant__ vec3 g_pixel_delta_v;
 
+__host__ __device__ double hit_sphere(const point3& center, double radius, const ray& r) {
+    vec3 oc = center - r.origin();
+    auto a = dot(r.direction(), r.direction());
+    auto b = -2.0 * dot(r.direction(), oc);
+    auto c = dot(oc, oc) - radius * radius;
+    auto discriminant = b*b - 4*a*c;
+    
+    if (discriminant < 0.0) {
+        return -1.0;
+    } else {
+        return (-b -sqrt(discriminant)) / (2.0 * a);
+    }
+}
+
 __host__ __device__ color ray_color(const ray& r) {
+    auto t = hit_sphere(point3(0, 0, -1), 0.5, r);
+    if (t > 0.0) {
+        vec3 N = unit_vector(r.at(t) - vec3(0.0, 0.0, -1.0));
+        return 0.5 * color(N.x() + 1, N.y() + 1, N.z() + 1);
+    }
+    // sky gradient
     vec3 unit_direction = unit_vector(r.direction());
     auto a = 0.5 * (unit_direction.y() + 1.0);
     return (1.0 - a) * color(1.0, 1.0, 1.0) + a * color(0.5, 0.7, 1.0);
@@ -51,8 +73,8 @@ __global__ void generate_frame(unsigned int *buffer, int width, int height) {
 
 int main() {
     // Image
-    auto aspect_ratio = 4096.00 / 2160.00;
-    int image_width = 4096;
+    auto aspect_ratio = 16.0 / 9.0;
+    int image_width = 400;
     int image_height = int(image_width / aspect_ratio);
     image_height = (image_height < 1) ? 1 : image_height;
     int total_pixels = image_width * image_height;
@@ -74,7 +96,7 @@ int main() {
 
     // viewport upper left corner
     auto viewport_upper_left = camera_center
-                                - vec3(0, 0, -focal_length)
+                                - vec3(0, 0, focal_length)
                                 - (viewport_u / 2)
                                 - (viewport_v / 2);
 

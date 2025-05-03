@@ -5,53 +5,33 @@
 #include "color.h"
 #include "ray.h"
 #include <math.h>
+#include "utils.h"
+#include "hittable.h"
+#include "hittable_list.h"
+#include "sphere.h"
 
 #define BLOCK_SIZE 256
-
-#define CHECK_CUDA_ERROR(val) check((val), #val, __FILE__, __LINE__)
-
-template <typename T>
-void check(T err, const char* const func, const char* file, const int line) {
-    if (err != cudaSuccess) {
-        fprintf(stderr, "CUDA error at %s:%d code=%d(%s) \"%s\" \n", file, 
-            line, static_cast<unsigned int>(err), cudaGetErrorString(err), 
-            func);
-        exit(EXIT_FAILURE);
-    }
-}
 
 __constant__ vec3 g_pixel00_loc;
 __constant__ vec3 g_camera_center;
 __constant__ vec3 g_pixel_delta_u;
 __constant__ vec3 g_pixel_delta_v;
 
-__host__ __device__ double hit_sphere(const point3& center, double radius, const ray& r) {
-    vec3 oc = center - r.origin();
-    auto a = dot(r.direction(), r.direction());
-    auto b = -2.0 * dot(r.direction(), oc);
-    auto c = dot(oc, oc) - radius * radius;
-    auto discriminant = b*b - 4*a*c;
-    
-    if (discriminant < 0.0) {
-        return -1.0;
-    } else {
-        return (-b -sqrt(discriminant)) / (2.0 * a);
-    }
-}
+__device__ color ray_color(const ray& r, const device_hittable_list* world) {
+    hit_record rec;
 
-__host__ __device__ color ray_color(const ray& r) {
-    auto t = hit_sphere(point3(0, 0, -1), 0.5, r);
-    if (t > 0.0) {
-        vec3 N = unit_vector(r.at(t) - vec3(0.0, 0.0, -1.0));
-        return 0.5 * color(N.x() + 1, N.y() + 1, N.z() + 1);
+    // object's normal gradient
+    if (world->hit(r, 0, infinity, rec)) {
+        return 0.5 * (rec.normal + color(1, 1, 1));
     }
+
     // sky gradient
     vec3 unit_direction = unit_vector(r.direction());
     auto a = 0.5 * (unit_direction.y() + 1.0);
     return (1.0 - a) * color(1.0, 1.0, 1.0) + a * color(0.5, 0.7, 1.0);
 }
 
-__global__ void generate_frame(unsigned int *buffer, int width, int height) {
+__global__ void generate_frame(unsigned int *buffer, int width, int height, device_hittable_list* world) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int total_pixels = width * height;
 
@@ -60,11 +40,12 @@ __global__ void generate_frame(unsigned int *buffer, int width, int height) {
         int j = idx / width;
         int buffer_idx = idx * 3;
 
-        auto pixel_center = g_pixel00_loc + (i * g_pixel_delta_u) + (j * g_pixel_delta_v);
+        auto pixel_center = g_pixel00_loc + (i * g_pixel_delta_u) 
+                                          + (j * g_pixel_delta_v);
         auto ray_direction = pixel_center - g_camera_center;
         ray r(g_camera_center, ray_direction);
 
-        color pixel_color = ray_color(r);
+        color pixel_color = ray_color(r, world);
 
         write_color(buffer, buffer_idx, pixel_color);
     }
@@ -83,7 +64,7 @@ int main() {
     auto focal_length = 1.0;
     auto viewport_height = 2.0;
     auto viewport_width = viewport_height * 
-                            (double(image_width) / image_height);
+                            (float(image_width) / image_height);
     auto camera_center = point3(0, 0, 0);
 
     // viewport vectors
@@ -110,11 +91,50 @@ int main() {
     // (256 * 256 + 128 - 1) / 256 = 256 blocks
     int total_blocks = (total_pixels + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    // The Host's frame buffer.
+    // The Host's frame buffer
     unsigned int *frame_buffer;
 
-    // Device's frame buffer.
+    // Device's frame buffer
     unsigned int *device_frame_buffer;
+
+    // initialize world
+
+    // Instead of creating objects on host:
+    device_hittable_list** d_world_ptr;
+    CHECK_CUDA_ERROR(cudaMalloc(&d_world_ptr, sizeof(device_hittable_list*)));
+
+    // Create all objects on device
+    setup_world<<<1,1>>>(d_world_ptr);
+    CHECK_CUDA_ERROR(cudaDeviceSynchronize());
+
+    // Get the device world pointer back to host
+    device_hittable_list* d_world;
+    CHECK_CUDA_ERROR(cudaMemcpy(&d_world, d_world_ptr, sizeof(device_hittable_list*), cudaMemcpyDeviceToHost));
+
+    // device_hittable_list **d_world_ptr;
+    // CHECK_CUDA_ERROR(cudaMalloc(&d_world_ptr, sizeof(device_hittable_list*)));
+    // setup_world<<<1, 1>>>(d_world_ptr);
+
+    // CHECK_CUDA_ERROR(cudaDeviceSynchronize());
+
+    // device_hittable_list *world;
+    // CHECK_CUDA_ERROR(cudaMallocManaged(&world, sizeof(device_hittable_list)));
+    // new (world) device_hittable_list();
+    // world->allocate(2);
+    
+    // // add objects in world
+    // sphere* sphere1;
+    // CHECK_CUDA_ERROR(cudaMallocManaged(&sphere1, sizeof(sphere)));
+    // new (sphere1) sphere(point3(0, 0, -1), 0.5);
+    // world->add(sphere1);
+
+    // sphere* sphere2;
+    // CHECK_CUDA_ERROR(cudaMallocManaged(&sphere2, sizeof(sphere)));
+    // new (sphere2) sphere(point3(0, -100.5, -1), 100);
+    // world->add(sphere2);
+
+
+
 
     CHECK_CUDA_ERROR(cudaEventCreate(&start));
     CHECK_CUDA_ERROR(cudaEventCreate(&stop));
@@ -133,11 +153,16 @@ int main() {
     CHECK_CUDA_ERROR(cudaMallocHost(&frame_buffer, sizeof(int) * buffer_size));
     CHECK_CUDA_ERROR(cudaMallocAsync(&device_frame_buffer, sizeof(int) * buffer_size, stream1));
 
-    generate_frame<<<total_blocks, BLOCK_SIZE, 0, stream1>>>(device_frame_buffer, image_width, image_height);
+    CHECK_CUDA_ERROR(cudaDeviceSynchronize());
+
+    generate_frame<<<total_blocks, BLOCK_SIZE, 0, stream1>>>(device_frame_buffer, 
+                                                             image_width, image_height,
+                                                             d_world);
 
     CHECK_CUDA_ERROR(cudaStreamSynchronize(stream1));
 
-    CHECK_CUDA_ERROR(cudaMemcpyAsync(frame_buffer, device_frame_buffer, sizeof(int) * buffer_size, cudaMemcpyDeviceToHost, stream1));
+    CHECK_CUDA_ERROR(cudaMemcpyAsync(frame_buffer, device_frame_buffer, 
+                sizeof(int) * buffer_size, cudaMemcpyDeviceToHost, stream1));
 
     std::cout << "P3\n" << image_width << ' ' << image_height << "\n255\n";
 

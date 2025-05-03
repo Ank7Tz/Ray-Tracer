@@ -1,7 +1,6 @@
 #ifndef RAY_H
 #define RAY_H
 
-#include <cuda_runtime.h>
 #include "vec3.h"
 
 class ray {
@@ -19,7 +18,7 @@ class ray {
             return dir;
         }
 
-        __host__ __device__ point3 at(double t) const {
+        __host__ __device__ point3 at(float t) const {
             return orig + t * dir;
         }
 

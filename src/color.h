@@ -5,7 +5,7 @@
 
 using color = vec3;
 
-__host__ __device__ void write_color(unsigned int *frame_buffer, int buffer_idx, const color& pixel_color) {
+__host__ __device__ void write_color(int *frame_buffer, int buffer_idx, const color& pixel_color) {
     auto r = pixel_color.x();
     auto g = pixel_color.y();
     auto b = pixel_color.z();

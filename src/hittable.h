@@ -10,19 +10,20 @@ class hit_record {
         float t;
         bool front_face;
 
-        __device__ void set_face_normal(const ray& r, const vec3& outward_normal) {
+        __host__ __device__ void set_face_normal(const ray& r, const vec3& outward_normal) {
             front_face = dot(r.direction(), outward_normal) < 0;
             normal = front_face ? outward_normal : -outward_normal;
         }
 };
 
+template <typename Derived>
 class hittable {
     public:
-        __device__ virtual ~hittable() {};
-
-        __device__ virtual bool hit(
+        __host__ __device__ bool hit(
             const ray& r, float ray_tmin, float ray_tmax, hit_record& rec) 
-            const = 0;
+            const {
+                return static_cast<const Derived*>(this)->hit_impl(r, ray_tmin, ray_tmax, rec);
+            }
 };
 
 #endif

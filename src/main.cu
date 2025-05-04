@@ -31,7 +31,7 @@ __device__ color ray_color(const ray& r, const device_hittable_list* world) {
     return (1.0 - a) * color(1.0, 1.0, 1.0) + a * color(0.5, 0.7, 1.0);
 }
 
-__global__ void generate_frame(unsigned int *buffer, int width, int height, device_hittable_list* world) {
+__global__ void generate_frame(int *buffer, int width, int height, device_hittable_list* world) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int total_pixels = width * height;
 
@@ -85,31 +85,49 @@ int main() {
                         + (0.5 * (pixel_delta_u + pixel_delta_v));
     
     int buffer_size = total_pixels * 3;
-    cudaEvent_t start, stop;
-    cudaStream_t stream1;
+    // cudaEvent_t start, stop;
+    // cudaStream_t stream1;
 
     // (256 * 256 + 128 - 1) / 256 = 256 blocks
     int total_blocks = (total_pixels + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
     // The Host's frame buffer
-    unsigned int *frame_buffer;
+    int *frame_buffer = new int[buffer_size];
 
     // Device's frame buffer
-    unsigned int *device_frame_buffer;
+    int *device_frame_buffer;
 
     // initialize world
+    host_hittable_list h_world;
+
+    sphere* h_sphere1 = new sphere(point3(0, 0, -1), 0.5);
+    sphere* h_sphere2 = new sphere(point3(0, -100.5, -1), 100);
+
+    sphere* d_sphere1;
+    CHECK_CUDA_ERROR(cudaMalloc(&d_sphere1, sizeof(sphere)));
+    CHECK_CUDA_ERROR(cudaMemcpy(d_sphere1, h_sphere1, sizeof(sphere), cudaMemcpyHostToDevice));
+
+    sphere* d_sphere2;
+    CHECK_CUDA_ERROR(cudaMalloc(&d_sphere2, sizeof(sphere)));
+    CHECK_CUDA_ERROR(cudaMemcpy(d_sphere2, h_sphere2, sizeof(sphere), cudaMemcpyHostToDevice));
+
+    h_world.add(d_sphere1);
+    h_world.add(d_sphere2);
+
+    device_hittable_list* d_world = h_world.create_device_copy();
+
 
     // Instead of creating objects on host:
-    device_hittable_list** d_world_ptr;
-    CHECK_CUDA_ERROR(cudaMalloc(&d_world_ptr, sizeof(device_hittable_list*)));
+    // device_hittable_list** d_world_ptr;
+    // CHECK_CUDA_ERROR(cudaMalloc(&d_world_ptr, sizeof(device_hittable_list*)));
 
-    // Create all objects on device
-    setup_world<<<1,1>>>(d_world_ptr);
-    CHECK_CUDA_ERROR(cudaDeviceSynchronize());
+    // // Create all objects on device
+    // setup_world<<<1,1>>>(d_world_ptr);
+    // CHECK_CUDA_ERROR(cudaDeviceSynchronize());
 
-    // Get the device world pointer back to host
-    device_hittable_list* d_world;
-    CHECK_CUDA_ERROR(cudaMemcpy(&d_world, d_world_ptr, sizeof(device_hittable_list*), cudaMemcpyDeviceToHost));
+    // // Get the device world pointer back to host
+    // device_hittable_list* d_world;
+    // CHECK_CUDA_ERROR(cudaMemcpy(&d_world, d_world_ptr, sizeof(device_hittable_list*), cudaMemcpyDeviceToHost));
 
     // device_hittable_list **d_world_ptr;
     // CHECK_CUDA_ERROR(cudaMalloc(&d_world_ptr, sizeof(device_hittable_list*)));
@@ -136,12 +154,12 @@ int main() {
 
 
 
-    CHECK_CUDA_ERROR(cudaEventCreate(&start));
-    CHECK_CUDA_ERROR(cudaEventCreate(&stop));
+    // CHECK_CUDA_ERROR(cudaEventCreate(&start));
+    // CHECK_CUDA_ERROR(cudaEventCreate(&stop));
 
-    CHECK_CUDA_ERROR(cudaStreamCreate(&stream1));
+    // CHECK_CUDA_ERROR(cudaStreamCreate(&stream1));
     
-    CHECK_CUDA_ERROR(cudaEventRecord(start, stream1));
+    // CHECK_CUDA_ERROR(cudaEventRecord(start, stream1));
 
     // Copy copy constant values to device memory
     CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_pixel00_loc, &pixel00_loc, sizeof(pixel00_loc)));
@@ -150,19 +168,21 @@ int main() {
     CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_pixel_delta_v, &pixel_delta_v, sizeof(pixel_delta_v)));
 
     
-    CHECK_CUDA_ERROR(cudaMallocHost(&frame_buffer, sizeof(int) * buffer_size));
-    CHECK_CUDA_ERROR(cudaMallocAsync(&device_frame_buffer, sizeof(int) * buffer_size, stream1));
+    // CHECK_CUDA_ERROR(cudaMallocHost(&frame_buffer, sizeof(int) * buffer_size));
+    CHECK_CUDA_ERROR(cudaMalloc(&device_frame_buffer, sizeof(int) * buffer_size));
 
     CHECK_CUDA_ERROR(cudaDeviceSynchronize());
 
-    generate_frame<<<total_blocks, BLOCK_SIZE, 0, stream1>>>(device_frame_buffer, 
+    generate_frame<<<total_blocks, BLOCK_SIZE>>>(device_frame_buffer, 
                                                              image_width, image_height,
                                                              d_world);
 
-    CHECK_CUDA_ERROR(cudaStreamSynchronize(stream1));
+    // CHECK_CUDA_ERROR(cudaStreamSynchronize(stream1));
 
-    CHECK_CUDA_ERROR(cudaMemcpyAsync(frame_buffer, device_frame_buffer, 
-                sizeof(int) * buffer_size, cudaMemcpyDeviceToHost, stream1));
+    CHECK_CUDA_ERROR(cudaDeviceSynchronize());
+
+    CHECK_CUDA_ERROR(cudaMemcpy(frame_buffer, device_frame_buffer, 
+                sizeof(int) * buffer_size, cudaMemcpyDeviceToHost));
 
     std::cout << "P3\n" << image_width << ' ' << image_height << "\n255\n";
 
@@ -173,20 +193,22 @@ int main() {
         }
     }
 
-    CHECK_CUDA_ERROR(cudaEventRecord(stop, stream1));
+    h_world.free_device_world(d_world);
 
-    CHECK_CUDA_ERROR(cudaEventSynchronize(stop));
-    float milliseconds = 0;
+    // CHECK_CUDA_ERROR(cudaEventRecord(stop, stream1));
 
-    CHECK_CUDA_ERROR(cudaEventElapsedTime(&milliseconds, start, stop));
+    // CHECK_CUDA_ERROR(cudaEventSynchronize(stop));
+    // float milliseconds = 0;
 
-    CHECK_CUDA_ERROR(cudaFreeHost(frame_buffer));
-    CHECK_CUDA_ERROR(cudaFree(device_frame_buffer));
-    CHECK_CUDA_ERROR(cudaStreamDestroy(stream1));
-    CHECK_CUDA_ERROR(cudaEventDestroy(start));
-    CHECK_CUDA_ERROR(cudaEventDestroy(stop));
+    // CHECK_CUDA_ERROR(cudaEventElapsedTime(&milliseconds, start, stop));
 
-    std::clog << "Execution time: " << milliseconds << " milliseconds" << std::endl;
+    // CHECK_CUDA_ERROR(cudaFreeHost(frame_buffer));
+    // CHECK_CUDA_ERROR(cudaFree(device_frame_buffer));
+    // CHECK_CUDA_ERROR(cudaStreamDestroy(stream1));
+    // CHECK_CUDA_ERROR(cudaEventDestroy(start));
+    // CHECK_CUDA_ERROR(cudaEventDestroy(stop));
+
+    // std::clog << "Execution time: " << milliseconds << " milliseconds" << std::endl;
 
     return 0;
 }

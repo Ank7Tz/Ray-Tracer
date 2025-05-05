@@ -20,4 +20,17 @@ __host__ __device__ inline double degrees_to_radians(double degrees) {
     return degrees * pi / 180.0;
 }
 
+__device__ inline double random_double(curandState* state) {
+    return curand_uniform_double(state);
+}
+
+__global__ void init_random_states(curandState* states, unsigned long seed) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    curand_init(seed, idx, 0, &states[idx]);
+}
+
+__device__ inline double random_double(curandState* state, double min, double max) {
+    return min + (max - min) * random_double(state);
+}
+
 #endif

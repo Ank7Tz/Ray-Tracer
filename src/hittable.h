@@ -2,6 +2,7 @@
 #define HITTABLE_H
 
 #include "ray.h"
+#include "interval.h"
 
 class hit_record {
     public:
@@ -20,9 +21,9 @@ template <typename Derived>
 class hittable {
     public:
         __host__ __device__ bool hit(
-            const ray& r, float ray_tmin, float ray_tmax, hit_record& rec) 
+            const ray& r, interval ray_t, hit_record& rec) 
             const {
-                return static_cast<const Derived*>(this)->hit_impl(r, ray_tmin, ray_tmax, rec);
+                return static_cast<const Derived*>(this)->hit_impl(r, ray_t, rec);
             }
 };
 

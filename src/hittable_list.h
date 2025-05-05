@@ -3,6 +3,7 @@
 
 #include "sphere.h"
 #include "utils.h"
+#include "interval.h"
 
 class device_hittable_list : public hittable<device_hittable_list> {
     public:
@@ -11,14 +12,14 @@ class device_hittable_list : public hittable<device_hittable_list> {
 
         __host__ __device__ device_hittable_list() {}
 
-        __device__ bool hit_impl(const ray& r, double ray_tmin, double ray_tmax, hit_record& rec)
+        __device__ bool hit_impl(const ray& r, interval ray_t, hit_record& rec)
         const {
             hit_record temp_rec;
             bool hit_anything = false;
-            auto closest_so_far = ray_tmax;
+            auto closest_so_far = ray_t.max;
 
             for (int i = 0; i < count; i++) {
-                if (objects[i]->hit(r, ray_tmin, closest_so_far, temp_rec)) {
+                if (objects[i]->hit(r, interval(ray_t.min, closest_so_far), temp_rec)) {
                     closest_so_far = temp_rec.t;
                     hit_anything = true;
                     rec = temp_rec;

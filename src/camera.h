@@ -2,7 +2,6 @@
 #define CAMERA_H
 
 #include "hittable.h"
-#include "hittable_list.h"
 #include "color.h"
 #include <device_launch_parameters.h>
 #include <cuda_runtime.h>
@@ -14,25 +13,74 @@ __constant__ vec3 g_pixel00_loc;
 __constant__ vec3 g_camera_center;
 __constant__ vec3 g_pixel_delta_u;
 __constant__ vec3 g_pixel_delta_v;
-__constant__ double g_pixel_sample_scale;
+__constant__ float g_pixel_sample_scale;
 __constant__ int g_samples_per_pixel;
+__constant__ int g_max_depth;
 
-__device__ color ray_color(const ray& r, const device_hittable_list* world) {
-    hit_record rec;
+__device__ color ray_color(const ray& r, const device_hittable_list* world, curandState* state) {
+    ray current_ray = r;
+    color current_attenuation(1.0, 1.0, 1.0);
+    color final_color(0.00, 0.00, 0.00);
 
-    // object's normal gradient
-    if (world->hit(r, interval(0, infinity), rec)) {
-        return 0.5 * (rec.normal + color(1, 1, 1));
+    for (int depth = 0; depth < g_max_depth; depth++) {
+        hit_record rec;
+        if (!world->hit(current_ray, interval(0.001, infinity), rec)) {
+            vec3 unit_direction = unit_vector(current_ray.direction());
+            auto a = 0.5 * (unit_direction.y() + 1.0);
+            color surrounding = (1.0 - a) * color(1.0, 1.0, 1.0) + a * color(0.5, 0.7, 1.0);
+            return final_color + current_attenuation * surrounding;
+        }
+
+        ray scattered;
+        color attenuation;
+
+        if (rec.mat->scatter(current_ray, rec, attenuation, scattered, state)) {
+            current_attenuation = current_attenuation * attenuation;
+
+            current_ray = scattered;
+        } else {
+            return final_color;            
+        }
     }
 
-    // sky gradient
-    vec3 unit_direction = unit_vector(r.direction());
-    auto a = 0.5 * (unit_direction.y() + 1.0);
-    return (1.0 - a) * color(1.0, 1.0, 1.0) + a * color(0.5, 0.7, 1.0);
+    return final_color;
 }
 
+
+// __device__ color ray_color(const ray& r, const device_hittable_list* world, curandState* state) {
+//     ray current_ray = r;
+//     color current_attenuation(1.0, 1.0, 1.0);
+//     color final_color(0.0, 0.0, 0.0);
+    
+//     for (int depth = 0; depth < g_max_depth; depth++) {
+//         hit_record rec;
+        
+//         if (!world->hit(current_ray, interval(0.001, infinity), rec)) {
+//             // Sky color
+//             vec3 unit_direction = unit_vector(current_ray.direction());
+//             auto a = 0.5 * (unit_direction.y() + 1.0);
+//             color sky_color = (1.0 - a) * color(1.0, 1.0, 1.0) + a * color(0.5, 0.7, 1.0);
+//             return final_color + current_attenuation * sky_color;
+//         }
+
+//         ray scattered;
+        
+//         // Bounce the ray
+//         vec3 direction = rec.normal + random_unit_vector(state);
+        
+//         // attenuation
+//         current_attenuation *= 0.1;
+        
+//         // Update the ray for the next iteration
+//         current_ray = ray(rec.p, direction);
+//     }
+    
+//     // If we've exhausted our bounce limit
+//     return color(0, 0, 0);
+// }
+
 __device__ vec3 sample_square(curandState* state) {
-    return vec3(random_double(state) - 0.5, random_double(state) - 0.5, 0);
+    return vec3(random_float(state) - 0.5, random_float(state) - 0.5, 0);
 }
 
 __device__ ray get_ray(int i, int j, curandState* state) {
@@ -61,7 +109,7 @@ __global__ void generate_frame(int *buffer, int width, int height, device_hittab
 
         for (int sample = 0; sample < g_samples_per_pixel; sample++) {
             ray r = get_ray(i, j, &states[idx]);
-            pixel_color += ray_color(r, world);
+            pixel_color += ray_color(r, world, &states[idx]);
         }
 
         write_color(buffer, buffer_idx, g_pixel_sample_scale * pixel_color);
@@ -71,19 +119,20 @@ __global__ void generate_frame(int *buffer, int width, int height, device_hittab
 
 class camera {
     public:
-        double aspect_ratio = 1.0;
+        float aspect_ratio = 1.0;
         int image_width = 100;
         int focal_length = 1.0;
         int samples_per_pixel = 10;
+        int max_depth = 10;
 
         void render(device_hittable_list* d_world) {
             initialize();
 
             curandState* d_states;
             
-            CHECK_CUDA_ERROR(cudaMalloc((void**) &d_states, total_pixels * sizeof(curandState)));
+            CHECK_CUDA_ERROR(cudaMalloc((void**) &d_states, total_pixels * sizeof(curandStateXORWOW)));
 
-            init_random_states<<<total_blocks, BLOCK_SIZE>>>(d_states, time(NULL));
+            init_random_states<<<total_blocks, BLOCK_SIZE>>>(d_states, time(NULL), total_pixels);
 
             CHECK_CUDA_ERROR(cudaDeviceSynchronize());
 
@@ -150,7 +199,7 @@ class camera {
             auto pixel00_loc = viewport_upper_left
             + (0.5 * (pixel_delta_u + pixel_delta_v));
 
-            double pixel_sample_scale = 1.0 / samples_per_pixel;
+            float pixel_sample_scale = 1.0 / samples_per_pixel;
 
             interval intensity(0.000, 0.999);
 
@@ -159,9 +208,10 @@ class camera {
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_camera_center, &camera_center, sizeof(camera_center)));
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_pixel_delta_u, &pixel_delta_u, sizeof(pixel_delta_u)));
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_pixel_delta_v, &pixel_delta_v, sizeof(pixel_delta_v)));
-            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_pixel_sample_scale, &pixel_sample_scale, sizeof(double)));
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_pixel_sample_scale, &pixel_sample_scale, sizeof(float)));
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_samples_per_pixel, &samples_per_pixel, sizeof(int)));
             CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_intensity, &intensity, sizeof(interval)));
+            CHECK_CUDA_ERROR(cudaMemcpyToSymbol(g_max_depth, &max_depth, sizeof(int)));
             
             // Device's frame buffer memory allocation
             CHECK_CUDA_ERROR(cudaMalloc(&device_frame_buffer, sizeof(int) * buffer_size));

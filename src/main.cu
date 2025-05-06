@@ -7,8 +7,6 @@
 #include <math.h>
 #include "utils.h"
 #include "hittable.h"
-#include "hittable_list.h"
-#include "sphere.h"
 #include "camera.h"
 
 int main() {
@@ -33,14 +31,47 @@ int main() {
     h_world.add(d_sphere1);
     h_world.add(d_sphere2);
 
+    size_t stackSize = 0;
+    cudaDeviceGetLimit(&stackSize, cudaLimitStackSize);
+    std::clog << stackSize << std::endl;
+
+    // To increase the stack size (e.g., to 16KB):
+    cudaDeviceSetLimit(cudaLimitStackSize, 4 * 16384);
+
+    // Verify the new stack size:
+    cudaDeviceGetLimit(&stackSize, cudaLimitStackSize);
+    std::clog << stackSize << std::endl;
+
     device_hittable_list* d_world = h_world.create_device_copy();
 
     camera cam;
     cam.aspect_ratio = aspect_ratio;
     cam.focal_length = 1.0;
     cam.image_width = image_width;
+    cam.max_depth = 50;
+    cam.samples_per_pixel = 100;
+
+    cudaEvent_t start, stop;
+    float milliseconds = 0;
+
+    // Create events
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
 
     cam.render(d_world);
+
+    cudaEventRecord(stop);
+
+    cudaEventSynchronize(stop);
+
+    cudaEventElapsedTime(&milliseconds, start, stop);
+
+    std::clog << "Rendering time: " << milliseconds << " ms" << std::endl;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
 
     h_world.free_device_world(d_world);
 

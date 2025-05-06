@@ -6,24 +6,24 @@
 
 class interval {
     public:
-        double min, max;
+        float min, max;
         __host__ __device__ interval() {}
 
-        __host__ __device__ interval(double min, double max) : min(min), max(max) {}
+        __host__ __device__ interval(float min, float max) : min(min), max(max) {}
 
-        __device__ double size() const {
+        __device__ float size() const {
             return max - min;
         }
 
-        __device__ bool contains(double x) const {
+        __device__ bool contains(float x) const {
             return x >= min && x <= max;
         }
 
-        __device__ bool surrounds(double x) const {
+        __device__ bool surrounds(float x) const {
             return x > min && x < max;
         }
 
-        __device__ double clamp(double x) const {
+        __device__ float clamp(float x) const {
             if (x < min) return min;
             if (x > max) return max;
             return x;

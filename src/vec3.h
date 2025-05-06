@@ -3,6 +3,7 @@
 
 #include <curand_kernel.h>
 #include <iostream>
+#include "utils.h"
 
 class vec3 {
     public:
@@ -67,6 +68,20 @@ class vec3 {
         __host__ __device__ float length_squared() const {
             return (e[0] * e[0]) + (e[1] * e[1]) + (e[2] * e[2]);
         }
+
+        __host__ __device__ bool near_zero() const {
+            auto s = 1e-8;
+            return (fabs(e[0]) < s) && (fabs(e[1]) < s) && (fabs(e[2]) < s);
+        }
+
+        static __device__ vec3 cuda_random(curandState* state) {
+            return vec3(random_float(state), random_float(state), random_float(state));
+        }
+
+        static __device__ vec3 cuda_random(curandState* state, float min, float max) {
+            return vec3(random_float(state, min, max), random_float(state, min, max), 
+                        random_float(state, min, max));
+        }
 };
 
 using point3 = vec3;
@@ -111,6 +126,26 @@ __host__ __device__ inline vec3 cross(const vec3& u, const vec3& v) {
 
 __host__ __device__ inline vec3 unit_vector(const vec3& u) {
     return u / u.length();
+}
+
+__device__ inline vec3 random_unit_vector(curandState* state) {
+    while (true) {
+        auto p = vec3::cuda_random(state, -1, 1);
+        auto lensq = p.length_squared();
+        if (1e-160 < lensq && lensq <= 1)
+            return p / sqrt(lensq);
+    }
+}
+
+__device__ inline vec3 random_on_hemisphere(curandState* state, const vec3& normal) {
+    vec3 on_unit_sphere = random_unit_vector(state);
+    auto value = dot(on_unit_sphere, normal);
+
+    return value > 0.0 ? on_unit_sphere : -on_unit_sphere;
+}
+
+__host__ __device__ inline vec3 reflect(const vec3& v, const vec3& n) {
+    return v - 2 * dot(v, n) * n;
 }
 
 #endif

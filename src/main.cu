@@ -17,26 +17,44 @@ int main() {
     // initialize world
     host_hittable_list h_world;
 
-    sphere* h_sphere1 = new sphere(point3(0, 0, -1), 0.5);
-    sphere* h_sphere2 = new sphere(point3(0, -100.5, -1), 100);
+    // material init
 
-    sphere* d_sphere1;
-    CHECK_CUDA_ERROR(cudaMalloc(&d_sphere1, sizeof(sphere)));
-    CHECK_CUDA_ERROR(cudaMemcpy(d_sphere1, h_sphere1, sizeof(sphere), cudaMemcpyHostToDevice));
+    auto h_material_ground = lambertian(color(0.8, 0.8, 0.0));
+    auto h_material_center = lambertian(color(0.1, 0.2, 0.5));
+    auto h_material_left = metal(color(0.8, 0.8, 0.8));
+    auto h_material_right = metal(color(0.8, 0.6, 0.2));
 
-    sphere* d_sphere2;
-    CHECK_CUDA_ERROR(cudaMalloc(&d_sphere2, sizeof(sphere)));
-    CHECK_CUDA_ERROR(cudaMemcpy(d_sphere2, h_sphere2, sizeof(sphere), cudaMemcpyHostToDevice));
+    material *d_material_ground, *d_material_center;
+    material *d_material_left, *d_material_right;
 
-    h_world.add(d_sphere1);
-    h_world.add(d_sphere2);
+    CHECK_CUDA_ERROR(cudaMalloc(&d_material_ground, sizeof(lambertian)));
+    CHECK_CUDA_ERROR(cudaMemcpy(d_material_ground, &h_material_ground, sizeof(lambertian), cudaMemcpyHostToDevice));
+
+    CHECK_CUDA_ERROR(cudaMalloc(&d_material_center, sizeof(lambertian)));
+    CHECK_CUDA_ERROR(cudaMemcpy(d_material_center, &h_material_center, sizeof(lambertian), cudaMemcpyHostToDevice));
+
+    CHECK_CUDA_ERROR(cudaMalloc(&d_material_left, sizeof(lambertian)));
+    CHECK_CUDA_ERROR(cudaMemcpy(d_material_left, &h_material_left, sizeof(lambertian), cudaMemcpyHostToDevice));
+
+    CHECK_CUDA_ERROR(cudaMalloc(&d_material_right, sizeof(lambertian)));
+    CHECK_CUDA_ERROR(cudaMemcpy(d_material_right, &h_material_right, sizeof(lambertian), cudaMemcpyHostToDevice));
+
+    sphere* h_sphere1 = new sphere(point3(0, -100.5, -1), 100.0, &h_material_ground);
+    sphere* h_sphere2 = new sphere(point3(0, 0, -1.2), 0.5, &h_material_center);
+    sphere* h_sphere3 = new sphere(point3(-1.0, 0.0, -1.0), 0.5, &h_material_left);
+    sphere* h_sphere4 = new sphere(point3(1.0, 0.0, -1.0), 0.5, &h_material_left);
+
+    h_world.add(h_sphere1);
+    h_world.add(h_sphere2);
+    h_world.add(h_sphere3);
+    h_world.add(h_sphere4);
 
     size_t stackSize = 0;
     cudaDeviceGetLimit(&stackSize, cudaLimitStackSize);
     std::clog << stackSize << std::endl;
 
     // To increase the stack size (e.g., to 16KB):
-    cudaDeviceSetLimit(cudaLimitStackSize, 4 * 16384);
+    cudaDeviceSetLimit(cudaLimitStackSize, 16384);
 
     // Verify the new stack size:
     cudaDeviceGetLimit(&stackSize, cudaLimitStackSize);

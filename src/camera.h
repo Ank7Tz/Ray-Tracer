@@ -46,39 +46,6 @@ __device__ color ray_color(const ray& r, const device_hittable_list* world, cura
     return final_color;
 }
 
-
-// __device__ color ray_color(const ray& r, const device_hittable_list* world, curandState* state) {
-//     ray current_ray = r;
-//     color current_attenuation(1.0, 1.0, 1.0);
-//     color final_color(0.0, 0.0, 0.0);
-    
-//     for (int depth = 0; depth < g_max_depth; depth++) {
-//         hit_record rec;
-        
-//         if (!world->hit(current_ray, interval(0.001, infinity), rec)) {
-//             // Sky color
-//             vec3 unit_direction = unit_vector(current_ray.direction());
-//             auto a = 0.5 * (unit_direction.y() + 1.0);
-//             color sky_color = (1.0 - a) * color(1.0, 1.0, 1.0) + a * color(0.5, 0.7, 1.0);
-//             return final_color + current_attenuation * sky_color;
-//         }
-
-//         ray scattered;
-        
-//         // Bounce the ray
-//         vec3 direction = rec.normal + random_unit_vector(state);
-        
-//         // attenuation
-//         current_attenuation *= 0.1;
-        
-//         // Update the ray for the next iteration
-//         current_ray = ray(rec.p, direction);
-//     }
-    
-//     // If we've exhausted our bounce limit
-//     return color(0, 0, 0);
-// }
-
 __device__ vec3 sample_square(curandState* state) {
     return vec3(random_float(state) - 0.5, random_float(state) - 0.5, 0);
 }

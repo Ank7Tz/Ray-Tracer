@@ -21,8 +21,8 @@ int main() {
 
     auto h_material_ground = lambertian(color(0.8, 0.8, 0.0));
     auto h_material_center = lambertian(color(0.1, 0.2, 0.5));
-    auto h_material_left = metal(color(0.8, 0.8, 0.8));
-    auto h_material_right = metal(color(0.8, 0.6, 0.2));
+    auto h_material_left = metal(color(0.8, 0.8, 0.8), 0.3);
+    auto h_material_right = metal(color(0.8, 0.6, 0.2), 1.0);
 
     material *d_material_ground, *d_material_center;
     material *d_material_left, *d_material_right;
@@ -51,14 +51,14 @@ int main() {
 
     size_t stackSize = 0;
     cudaDeviceGetLimit(&stackSize, cudaLimitStackSize);
-    std::clog << stackSize << std::endl;
+    std::clog << "intial stack frame(size):\t" << stackSize << std::endl;
 
     // To increase the stack size (e.g., to 16KB):
     cudaDeviceSetLimit(cudaLimitStackSize, 16384);
 
     // Verify the new stack size:
     cudaDeviceGetLimit(&stackSize, cudaLimitStackSize);
-    std::clog << stackSize << std::endl;
+    std::clog << "new stack frame(size):\t" << stackSize << std::endl;
 
     device_hittable_list* d_world = h_world.create_device_copy();
 

@@ -49,35 +49,33 @@ class metal : public material {
     public:
         __host__ __device__ metal() : material(Metal) {}
 
-        __host__ __device__ metal(const color& albedo) : albedo(albedo), material(Metal) {}
+        __host__ __device__ metal(const color& albedo, float fuzz) : albedo(albedo), material(Metal)
+                                , fuzz(fuzz < 1 ? fuzz : 1) {}
 
-        __device__ bool scatter_impl(const ray& r_in, const hit_record& rec, color& attenuation, ray& scattered)
+        __device__ bool scatter_impl(const ray& r_in, const hit_record& rec, color& attenuation, 
+                                     ray& scattered, curandState* state)
         const {
             vec3 reflected = reflect(r_in.direction(), rec.normal);
+            reflected = unit_vector(reflected) + (fuzz * random_unit_vector(state));
             scattered = ray(rec.p, reflected);
             attenuation = albedo;
-            return true;
+            return (dot(scattered.direction(), rec.normal) > 0);
         }
 
         __host__ material* device_copy_impl() const {
-            // Allocate memory for a new metal material on device
             metal* d_metal_copy;
             cudaMalloc(&d_metal_copy, sizeof(metal));
             
-            // Create a temporary metal with the same properties
-            // Make sure to set the right type in the base material class
-            metal temp_metal(albedo);
-            temp_metal.type = material::Metal;  // Ensure the type is set correctly
-            
-            // Copy the temporary metal to device memory
+            metal temp_metal(albedo, fuzz);
+
             cudaMemcpy(d_metal_copy, &temp_metal, sizeof(metal), cudaMemcpyHostToDevice);
             
-            // Return as a material pointer (base class)
             return d_metal_copy;
         }
 
     private:
         color albedo;
+        float fuzz;
 };
 
 
@@ -151,17 +149,13 @@ class sphere : public hittable {
             }
 
             __host__ sphere* device_copy_impl() const {
-                // Allocate memory for a new sphere on device
                 sphere* d_sphere_copy;
                 cudaMalloc(&d_sphere_copy, sizeof(sphere));
                 
-                // Create a copy of the material on device
                 material* d_mat_copy = (material*)mat->device_copy();
                 
-                // Create a temporary sphere with the device material pointer
                 sphere temp_sphere(center, radius, d_mat_copy);
                 
-                // Copy the temporary sphere to device memory
                 cudaMemcpy(d_sphere_copy, &temp_sphere, sizeof(sphere), cudaMemcpyHostToDevice);
                 
                 return d_sphere_copy;
@@ -193,17 +187,13 @@ class lambertian : public material {
         }
 
         __host__ material* device_copy_impl() const {
-            // Allocate memory for a new lambertian material on device
             lambertian* d_lambertian_copy;
             cudaMalloc(&d_lambertian_copy, sizeof(lambertian));
             
-            // Create a temporary lambertian with the same properties
             lambertian temp_lambertian(albedo);
             
-            // Copy the temporary lambertian to device memory
             cudaMemcpy(d_lambertian_copy, &temp_lambertian, sizeof(lambertian), cudaMemcpyHostToDevice);
             
-            // Return as a material pointer (base class)
             return d_lambertian_copy;
         }
     
@@ -254,10 +244,9 @@ __device__ bool material::scatter(
     if (type == Lambertian) {
         const lambertian* lam = reinterpret_cast<const lambertian*>(this); 
         return lam->scatter_impl(r_in, rec, attenuation, scattered, state);
-    }
-    if (type == Metal) {
+    } else if (type == Metal) {
         const metal* met = reinterpret_cast<const metal*>(this);
-        return met->scatter_impl(r_in, rec, attenuation, scattered);
+        return met->scatter_impl(r_in, rec, attenuation, scattered, state);
     }
 
     return false;
@@ -320,26 +309,21 @@ class host_hittable_list {
         }
 
         device_hittable_list* create_device_copy() {
-            // 1. First, create device copies of each sphere
             sphere** device_spheres = new sphere*[count];
             for (int i = 0; i < count; i++) {
                 device_spheres[i] = (sphere*) objects[i]->device_copy();
             }
             
-            // 2. Allocate device memory for the array of sphere pointers
             sphere** d_objects;
             CHECK_CUDA_ERROR(cudaMalloc(&d_objects, count * sizeof(sphere*)));
             
-            // 3. Copy the array of device sphere pointers to device memory
             CHECK_CUDA_ERROR(cudaMemcpy(d_objects, device_spheres, count * sizeof(sphere*), cudaMemcpyHostToDevice));
             delete[] device_spheres;  // Free temporary array
             
-            // 4. Create the world object with device pointers
             device_hittable_list h_world(hittable::WORLD);
-            h_world.objects = d_objects;  // Use device pointer here!
+            h_world.objects = d_objects;
             h_world.count = count;
             
-            // 5. Copy the world object to device
             device_hittable_list* d_world;
             CHECK_CUDA_ERROR(cudaMalloc(&d_world, sizeof(device_hittable_list)));
             CHECK_CUDA_ERROR(cudaMemcpy(d_world, &h_world, sizeof(device_hittable_list), cudaMemcpyHostToDevice));

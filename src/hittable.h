@@ -14,8 +14,9 @@ class lambertian;
 class material {
     public:
         enum Type {
-            Lambertian,
-            Metal
+            LAMBERTIAN,
+            METAL,
+            DIELECTRIC
         };
 
         Type type;
@@ -47,9 +48,9 @@ class hit_record {
 
 class metal : public material {
     public:
-        __host__ __device__ metal() : material(Metal) {}
+        __host__ __device__ metal() : material(METAL) {}
 
-        __host__ __device__ metal(const color& albedo, float fuzz) : albedo(albedo), material(Metal)
+        __host__ __device__ metal(const color& albedo, float fuzz) : albedo(albedo), material(METAL)
                                 , fuzz(fuzz < 1 ? fuzz : 1) {}
 
         __device__ bool scatter_impl(const ray& r_in, const hit_record& rec, color& attenuation, 
@@ -64,11 +65,11 @@ class metal : public material {
 
         __host__ material* device_copy_impl() const {
             metal* d_metal_copy;
-            cudaMalloc(&d_metal_copy, sizeof(metal));
+            CHECK_CUDA_ERROR(cudaMalloc(&d_metal_copy, sizeof(metal)));
             
             metal temp_metal(albedo, fuzz);
 
-            cudaMemcpy(d_metal_copy, &temp_metal, sizeof(metal), cudaMemcpyHostToDevice);
+            CHECK_CUDA_ERROR(cudaMemcpy(d_metal_copy, &temp_metal, sizeof(metal), cudaMemcpyHostToDevice));
             
             return d_metal_copy;
         }
@@ -76,6 +77,56 @@ class metal : public material {
     private:
         color albedo;
         float fuzz;
+};
+
+class dielectric : public material {
+    public:
+        __host__ __device__ dielectric(float refraction_index) : refraction_index(refraction_index),
+                            material(DIELECTRIC) {}
+
+        __device__ bool scatter_impl(const ray& r_in, const hit_record& rec, 
+                                     color& attenuation, ray& scattered,
+                                     curandState* state) const {
+            attenuation = color(1.0, 1.0, 1.0);
+            float ri = rec.front_face ? (1.0 / refraction_index) : refraction_index;
+
+            vec3 unit_direction = unit_vector(r_in.direction());
+            float cos_theta = fminf(dot(-unit_direction, rec.normal), 1.0);
+            float sin_theta = sqrtf(1.0 - cos_theta * cos_theta);
+
+            bool cannot_refract = ri * sin_theta > 1.0;
+            vec3 direction;
+
+            if (cannot_refract || reflectance(cos_theta, ri) > random_float(state)) {
+                direction = reflect(unit_direction, rec.normal);
+            } else {
+                direction = refract(unit_direction, rec.normal, ri);
+            }
+
+            scattered = ray(rec.p, direction);
+
+            return true;
+        }
+
+        __host__ void *device_copy_impl() const {
+            dielectric* d_dielectric_copy;
+            CHECK_CUDA_ERROR(cudaMalloc(&d_dielectric_copy, sizeof(dielectric)));
+
+            dielectric temp(refraction_index);
+
+            CHECK_CUDA_ERROR(cudaMemcpy(d_dielectric_copy, &temp, sizeof(dielectric), cudaMemcpyHostToDevice));
+
+            return d_dielectric_copy;
+        }
+    
+    private:
+        float refraction_index;
+
+        __device__ static float reflectance(float cosine, float refraction_index) {
+            auto r0 = (1 - refraction_index) / (1 + refraction_index);
+            r0 = r0 * r0;
+            return r0 + (1 -r0) * powf((1 - cosine), 5);
+        }
 };
 
 
@@ -136,27 +187,15 @@ class sphere : public hittable {
                 return true;
             }
 
-            __device__ __host__ void set_center(point3& center) {
-                center = center;
-            }
-
-            __device__ __host__ void set_radius(float radius) {
-                radius = radius;
-            }
-
-            __device__ __host__ void set_material(material& material) {
-                material = material;
-            }
-
             __host__ sphere* device_copy_impl() const {
                 sphere* d_sphere_copy;
-                cudaMalloc(&d_sphere_copy, sizeof(sphere));
+                CHECK_CUDA_ERROR(cudaMalloc(&d_sphere_copy, sizeof(sphere)));
                 
                 material* d_mat_copy = (material*)mat->device_copy();
                 
                 sphere temp_sphere(center, radius, d_mat_copy);
                 
-                cudaMemcpy(d_sphere_copy, &temp_sphere, sizeof(sphere), cudaMemcpyHostToDevice);
+                CHECK_CUDA_ERROR(cudaMemcpy(d_sphere_copy, &temp_sphere, sizeof(sphere), cudaMemcpyHostToDevice));
                 
                 return d_sphere_copy;
             }
@@ -168,9 +207,9 @@ class sphere : public hittable {
 
 class lambertian : public material {
     public:
-        __device__ __host__ lambertian() : material(Lambertian) {}
+        __device__ __host__ lambertian() : material(LAMBERTIAN) {}
 
-        __device__ __host__ lambertian(const color& albedo) : albedo(albedo), material(Lambertian) {}
+        __device__ __host__ lambertian(const color& albedo) : albedo(albedo), material(LAMBERTIAN) {}
 
         __device__ bool scatter_impl(const ray& r_in, const hit_record& rec, 
                           color& attenuation, ray& scattered,
@@ -188,11 +227,11 @@ class lambertian : public material {
 
         __host__ material* device_copy_impl() const {
             lambertian* d_lambertian_copy;
-            cudaMalloc(&d_lambertian_copy, sizeof(lambertian));
+            CHECK_CUDA_ERROR(cudaMalloc(&d_lambertian_copy, sizeof(lambertian)));
             
             lambertian temp_lambertian(albedo);
             
-            cudaMemcpy(d_lambertian_copy, &temp_lambertian, sizeof(lambertian), cudaMemcpyHostToDevice);
+            CHECK_CUDA_ERROR(cudaMemcpy(d_lambertian_copy, &temp_lambertian, sizeof(lambertian), cudaMemcpyHostToDevice));
             
             return d_lambertian_copy;
         }
@@ -241,12 +280,15 @@ __device__ bool hittable::hit(const ray& r, interval ray_t, hit_record& rec) con
 __device__ bool material::scatter(
     const ray& r_in, const hit_record& rec, color& attenuation, ray& scattered, curandState* state 
 ) const {
-    if (type == Lambertian) {
+    if (type == LAMBERTIAN) {
         const lambertian* lam = reinterpret_cast<const lambertian*>(this); 
         return lam->scatter_impl(r_in, rec, attenuation, scattered, state);
-    } else if (type == Metal) {
+    } else if (type == METAL) {
         const metal* met = reinterpret_cast<const metal*>(this);
         return met->scatter_impl(r_in, rec, attenuation, scattered, state);
+    } else if (type == DIELECTRIC) {
+        const dielectric* die = reinterpret_cast<const dielectric*>(this);
+        return die->scatter_impl(r_in, rec, attenuation, scattered, state);
     }
 
     return false;
@@ -262,12 +304,15 @@ __host__ void *hittable::device_copy() const {
 }
 
 __host__ void *material::device_copy() const {
-    if (type == Lambertian) {
+    if (type == LAMBERTIAN) {
         const lambertian* lam = reinterpret_cast<const lambertian*>(this); 
         return lam->device_copy_impl();
-    } else if (type == Metal) {
+    } else if (type == METAL) {
         const metal* met = reinterpret_cast<const metal*>(this);
         return met->device_copy_impl();
+    } else if (type == DIELECTRIC) {
+        const dielectric* die = reinterpret_cast<const dielectric*>(this);
+        return die->device_copy_impl();
     }
 
     return nullptr;

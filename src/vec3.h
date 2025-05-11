@@ -82,6 +82,15 @@ class vec3 {
             return vec3(random_float(state, min, max), random_float(state, min, max), 
                         random_float(state, min, max));
         }
+
+        static __host__ vec3 random() {
+            return vec3(host_random_float(), host_random_float(), host_random_float());
+        }
+
+        static __host__ vec3 random(float min, float max) {
+            return vec3(host_random_float(min, max), host_random_float(min, max), 
+                        host_random_float(min, max));
+        }
 };
 
 using point3 = vec3;
@@ -146,6 +155,22 @@ __device__ inline vec3 random_on_hemisphere(curandState* state, const vec3& norm
 
 __host__ __device__ inline vec3 reflect(const vec3& v, const vec3& n) {
     return v - 2 * dot(v, n) * n;
+}
+
+__host__ __device__ inline vec3 refract(const vec3& uv, const vec3& n, float etai_over_etat) {
+    auto cos_theta = fminf(dot(-uv, n), 1.0);
+    vec3 r_out_perp = etai_over_etat * (uv + cos_theta * n);
+    vec3 r_out_parallel = -sqrtf(fabsf(1.0 - r_out_perp.length_squared())) * n;
+    return r_out_perp + r_out_parallel;
+}
+
+__device__ inline vec3 random_in_unit_disk(curandState* state) {
+    while (true) {
+        auto p = vec3(random_float(state, -1, 1), random_float(state, -1, 1), 0);
+        if (p.length_squared() < 1) {
+            return p;
+        }
+    }
 }
 
 #endif

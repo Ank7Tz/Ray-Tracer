@@ -2,6 +2,7 @@
 #define UTILS_H
 
 #include <curand_kernel.h>
+#include <random>
 
 #define CHECK_CUDA_ERROR(val) check((val), #val, __FILE__, __LINE__)
 
@@ -34,6 +35,16 @@ __global__ void init_random_states(curandState* states, unsigned long seed, int 
 
 __device__ inline float random_float(curandState* state, float min, float max) {
     return min + (max - min) * random_float(state);
+}
+
+__host__ inline float host_random_float() {
+    static std::uniform_real_distribution<float> distribution(0.0, 1.0);
+    static std::mt19937 generator;
+    return distribution(generator);
+}
+
+__host__ inline float host_random_float(float min, float max) {
+    return min + (max - min) * host_random_float();
 }
 
 __device__ inline float linear_to_gamma(float linear_component) {

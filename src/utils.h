@@ -27,10 +27,15 @@ __device__ inline float random_float(curandState* state) {
     return curand_uniform_double(state);
 }
 
-__global__ void init_random_states(curandState* states, unsigned long seed, int n) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n)
-    curand_init(seed, idx, 0, &states[idx]);
+__global__ void init_random_states(curandState* states, unsigned long seed, int width, int height) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x < width && y < height) {
+        int idx = y * width + x;
+        curand_init(seed, idx, 0, &states[idx]);
+    }
+
 }
 
 __device__ inline float random_float(curandState* state, float min, float max) {

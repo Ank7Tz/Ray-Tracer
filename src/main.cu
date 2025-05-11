@@ -18,7 +18,8 @@ host_hittable_list *generate_world() {
     for (int a = -11; a < 11; a++) {
         for (int b = -11; b < 11; b++) {
             auto choose_mat = host_random_float();
-            point3 *center = new point3(a + 0.9 * host_random_float(), 0.2, b + 0.9 * host_random_float());
+            auto height = host_random_float(0.1, 0.3);
+            point3 *center = new point3(a + 0.9 * host_random_float(), height, b + 0.9 * host_random_float());
             if (((*center) - point3(4, 0.2, 0)).length() > 0.9) {
                 material *sphere_material;
                 if (choose_mat < 0.8) {
@@ -34,7 +35,7 @@ host_hittable_list *generate_world() {
                     sphere_material = new dielectric(1.5);
                 }
 
-                sphere *object = new sphere(*center, 0.2, sphere_material);
+                sphere *object = new sphere(*center, height, sphere_material);
                 h_world->add(object);
             }
         }
@@ -87,7 +88,7 @@ int main() {
     std::clog << "intial stack frame(size):\t" << stackSize << std::endl;
 
     // To increase the stack size (e.g., to 64KB):
-    cudaDeviceSetLimit(cudaLimitStackSize, 4 * 16384);
+    cudaDeviceSetLimit(cudaLimitStackSize, 2 * 16384);
 
     // Verify the new stack size:
     cudaDeviceGetLimit(&stackSize, cudaLimitStackSize);
@@ -99,8 +100,8 @@ int main() {
     cam.aspect_ratio = aspect_ratio;
     cam.focal_length = 1.0;
     cam.image_width = image_width;
-    cam.max_depth = 50;
-    cam.samples_per_pixel = 500;
+    cam.max_depth = 10;
+    cam.samples_per_pixel = 20;
     cam.vfov = 20;
     cam.lookfrom  = point3(13, 2, 3);
     cam.lookat = point3(0, 0, 0);

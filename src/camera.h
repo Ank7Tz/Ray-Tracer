@@ -72,18 +72,17 @@ __device__ ray get_ray(int i, int j, curandState* state) {
 }
 
 __global__ void generate_frame(int *buffer, int width, int height, device_hittable_list* world, curandState* states) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int total_pixels = width * height;
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (idx < total_pixels) {
-        int i = idx % width;
-        int j = idx / width;
+    if (x < width && y < height) {
+        int idx = y * width + x;
         int buffer_idx = idx * 3;
 
         color pixel_color(0, 0, 0);
 
         for (int sample = 0; sample < g_samples_per_pixel; sample++) {
-            ray r = get_ray(i, j, &states[idx]);
+            ray r = get_ray(x, y, &states[idx]);
             pixel_color += ray_color(r, world, &states[idx]);
         }
 
@@ -115,11 +114,15 @@ class camera {
             
             CHECK_CUDA_ERROR(cudaMalloc((void**) &d_states, total_pixels * sizeof(curandStateXORWOW)));
 
-            init_random_states<<<total_blocks, BLOCK_SIZE>>>(d_states, time(NULL), total_pixels);
+            dim3 blockSize(16, 16);
+            dim3 gridSize((image_width + blockSize.x - 1) / blockSize.x,
+                           (image_height + blockSize.y - 1) / blockSize.y);
+
+            init_random_states<<<gridSize, blockSize>>>(d_states, time(NULL), image_width, image_height);
 
             CHECK_CUDA_ERROR(cudaDeviceSynchronize());
 
-            generate_frame<<<total_blocks, BLOCK_SIZE>>>(device_frame_buffer, 
+            generate_frame<<<gridSize, blockSize>>>(device_frame_buffer, 
                 image_width, image_height,
                 d_world, d_states);
 

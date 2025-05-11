@@ -15,8 +15,8 @@ host_hittable_list *generate_world() {
     sphere *ground_sphere = new sphere(point3(0, -1000, 0), 1000, ground_material);
     h_world->add(ground_sphere);
 
-    for (int a = -5; a < 5; a++) {
-        for (int b = -5; b < 5; b++) {
+    for (int a = -11; a < 11; a++) {
+        for (int b = -11; b < 11; b++) {
             auto choose_mat = host_random_float();
             point3 *center = new point3(a + 0.9 * host_random_float(), 0.2, b + 0.9 * host_random_float());
             if (((*center) - point3(4, 0.2, 0)).length() > 0.9) {
@@ -99,8 +99,8 @@ int main() {
     cam.aspect_ratio = aspect_ratio;
     cam.focal_length = 1.0;
     cam.image_width = image_width;
-    cam.max_depth = 20;
-    cam.samples_per_pixel = 20;
+    cam.max_depth = 50;
+    cam.samples_per_pixel = 500;
     cam.vfov = 20;
     cam.lookfrom  = point3(13, 2, 3);
     cam.lookat = point3(0, 0, 0);

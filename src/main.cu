@@ -52,25 +52,6 @@ int main() {
     // // initialize world
     host_hittable_list *h_world = new host_hittable_list();
 
-    // // material init
-    // auto h_material_ground = lambertian(color(0.5, 0.5, 0.5));
-    // auto h_material_center = lambertian(color(0.1, 0.2, 0.5));
-    // auto h_material_left = dielectric(1.50);
-    // auto material_bubble = dielectric(1.00 / 1.50);
-    // auto h_material_right = metal(color(0.8, 0.6, 0.2), 1.0);
-
-    // sphere* h_sphere1 = new sphere(point3(0, -100.5, -1.0), 100.0, &h_material_ground);
-    // sphere* h_sphere2 = new sphere(point3(0, 0, -2.2), 0.5, &h_material_center);
-    // sphere* h_sphere3 = new sphere(point3(-1.0, 0.0, -1.0), 0.5, &h_material_left);
-    // sphere* h_sphere4 = new sphere(point3(1.0, 0.0, 1.0), 0.5, &h_material_right);
-    // sphere* h_sphere5 = new sphere(point3(-1.0, 0.0, -1.0), 0.4, &material_bubble);
-
-    // h_world->add(h_sphere1);
-    // h_world->add(h_sphere2);
-    // h_world->add(h_sphere3);
-    // h_world->add(h_sphere4);
-    // h_world->add(h_sphere5);
-
     // generate world (random)
     h_world = generate_world();
 

@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package ray_tracer;
+
+option go_package = "github.com/Ank7Tz/Ray-Tracer/server";
+
+message Image {
+    int32 width = 1;
+    int32 height = 2;
+    bytes data = 3;
+}
+
+
+message Material {
+    enum Type {
+        LAMBERTIAN = 0;
+        METAL = 1;
+        DIELECTRIC = 2;
+    }
+
+    repeated float albedo = 1;
+    float fuzz = 2;
+    float refraction_index = 3;
+}
+
+message Sphere {
+    repeated float center = 1;
+    float radius = 2;
+    Material mat = 3;
+}
+
+message WorldData {
+    repeated Sphere hittable_list = 1;
+}
+
+message PingRequest {
+    String name
+}
+
+service worldDataService {
+    rpc Ping()
+}

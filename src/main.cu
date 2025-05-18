@@ -8,6 +8,10 @@
 #include "utils.h"
 #include "hittable.h"
 #include "camera.h"
+#include <string>
+#include <string_view>
+#include <optional>
+#include <charconv>
 
 host_hittable_list *generate_world() {
     host_hittable_list *h_world = new host_hittable_list();
@@ -44,10 +48,36 @@ host_hittable_list *generate_world() {
     return h_world;
 }
 
-int main() {
+std::optional<std::string_view> getCmdOption(int argc, char* argv[], 
+                                             std::string_view option) {
+    
+    for (int i = 1; i < argc; i++) {
+        std::string_view arg = argv[i];
+
+        if (arg == option) {
+            if (i + 1 < argc)  {
+                return argv[i + 1];
+            }
+            return std::nullopt;
+        }
+    }
+    
+    return std::nullopt;
+}
+
+bool cmdOptionExists(int argc, char* argv[], std::string_view option) {
+    for (int i = 1; i < argc; i++) {
+        if (std::string_view(argv[i]) == option) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void standalone(int image_width, int samples_per_pixel, int max_depth) {
     // Image
     auto aspect_ratio = 16.0 / 9.0;
-    int image_width = 1200;
 
     // // initialize world
     host_hittable_list *h_world = new host_hittable_list();
@@ -100,8 +130,8 @@ int main() {
     cam.aspect_ratio = aspect_ratio;
     cam.focal_length = 1.0;
     cam.image_width = image_width;
-    cam.max_depth = 10;
-    cam.samples_per_pixel = 20;
+    cam.max_depth = max_depth;
+    cam.samples_per_pixel = samples_per_pixel;
     cam.vfov = 20;
     cam.lookfrom  = point3(13, 2, 3);
     cam.lookat = point3(0, 0, 0);
@@ -132,6 +162,46 @@ int main() {
     cudaEventDestroy(stop);
 
     // h_world->free_device_world(d_world);
+}
+
+std::optional<int> getIntOptionValue(int argc, char* argv[], std::string_view option) {
+    auto value = getCmdOption(argc, argv, option);
+    if (!value) {
+        return std::nullopt;
+    }
+
+    int result = 0;
+    auto view = *value;
+
+    auto [ptr, ec] = std::from_chars(view.data(), view.data() + view.size(), result);
+
+    if (ec != std::errc() || ptr != view.data() + view.size()) {
+        return std::nullopt;
+    }
+
+    return result;
+}
+
+
+int main(int argc, char* argv[]) {
+    if (cmdOptionExists(argc, argv, "--help")) {
+        std::cout << "Usage - \n" 
+            << "--server <ip>\t\t" << "control server IP\n" 
+            << "--image_width <width>\t\t" << "Image width\n"
+            << "--max_depht <depth>\t\t" << "max no. ray reflection\n"
+            << "--samples_per_pixel <samples_count>\t\t" << "samples per pixel\n"
+            << "or pass no arguments to run in standalone mode with default arguments\n";
+        return 0;
+    }
+
+    auto image_width = getIntOptionValue(argc, argv, "--image_width").value_or(400);
+
+    auto samples_per_pixel = getIntOptionValue(argc, argv, "--samples_per_pixel").value_or(20);
+
+    auto max_depth = getIntOptionValue(argc, argv, "--max_depth").value_or(20);
+
+    if (!cmdOptionExists(argc, argv, "--server"))
+        standalone(image_width, samples_per_pixel, max_depth);
 
     return 0;
 }

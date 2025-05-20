@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package ray_tracer;
+
+option go_package = "github.com/Ank7Tz/Ray-Tracer/server";
+
+message Image {
+    int32 width = 1;
+    int32 height = 2;
+    bytes data = 3;
+}
+
+
+message Material {
+    enum Type {
+        LAMBERTIAN = 0;
+        METAL = 1;
+        DIELECTRIC = 2;
+    }
+
+    Type MaterialType = 1;
+    repeated float albedo = 2;
+    float fuzz = 3;
+    float refraction_index = 4;
+}
+
+message Sphere {
+    repeated float center = 1;
+    float radius = 2;
+    Material mat = 3;
+}
+
+message WorldData {
+    repeated Sphere hittable_list = 1;
+}
+
+message ClientInfo {
+    string clientId = 1;
+}
+
+service worldDataService {
+    rpc RegisterClient(ClientInfo) returns (stream WorldData);
+}
